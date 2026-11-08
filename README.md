@@ -1,67 +1,58 @@
-# ☕ 문동휘와 커피챗
+# ☕ 커피챗 with 민석 & 현우
 
-9월 한 달간 커피챗 신청을 받는 정적 웹사이트입니다.
-GitHub Pages(프론트) + Google Apps Script(백엔드) + Google Calendar 연동.
+SNUSV 세미운영진 박민석, 박현우에게 커피챗을 신청하는 웹사이트입니다.
+[doonghwi/coffeechat](https://github.com/doonghwi/coffeechat) 을 포크해 백엔드를 Vercel 로 옮겼습니다.
 
-- 로그인 없이 **이름만** 남기고 신청
-- 이름 → 날짜·시간대 → 시작·종료 시각(30분 단위 드롭다운) → 방법(식사/커피/운동/기타) → 장소/종목 → 메시지
-- 맛집 488곳: 네이버 지도 저장 리스트에서 추출 (⭐찐맛집 / ✅검증된 맛집 / 맛집)
-- 예약되거나 내 캘린더가 차 있는 시간대는 자동으로 선택 불가 (캘린더 **내용은 비공개**, 참/빔만 노출)
-- 신청 완료 시 내 구글 캘린더에 `@@시 [이름] [위치] 커피챗` 이벤트 자동 생성
+- 신청자는 **이름만** 입력하고 들어갑니다.
+- 관리자는 입장 화면에서 **관리자** 탭을 누르고 박현우 또는 박민석을 고른 뒤 비밀번호를 입력합니다.
+- 관리자는 주간 시간표에서 드래그해 가능한 시간을 올립니다. 휴대폰에서는 시작 칸과 끝 칸을 차례로 누릅니다.
+- 관리자가 올린 시간만 신청할 수 있습니다. 신청하면 그 시간은 닫히고, 시간표와 신청 현황에 신청자 이름이 뜹니다. 관리자가 취소해야만 다시 열립니다.
+- 신청자는 박민석, 박현우, 두 분 다 중에서 고릅니다. 두 분 다를 고르면 함께 비는 시간만 보입니다.
 
-## 배포 후 해야 할 설정 (2가지)
+## Vercel 배포
 
-### 1. Google Apps Script 백엔드 (5분)
+1. 작업 브랜치를 포크의 `main` 에 합치고 GitHub 에 push 합니다.
+2. [vercel.com/new](https://vercel.com/new) 에서 이 저장소를 Import 합니다. 빌드 설정은 `vercel.json` 에 들어 있어 건드리지 않아도 됩니다.
+3. 프로젝트의 **Storage** 탭에서 **Upstash for Redis** 를 만들어 연결합니다. 서울과 가까운 지역을 고르세요. `KV_REST_API_URL` 과 `KV_REST_API_TOKEN` 이 자동으로 들어갑니다.
+4. **Redeploy** 합니다. 환경 변수는 배포할 때 읽으므로 저장소를 연결한 뒤 한 번 더 배포해야 합니다.
+5. 관리자로 로그인해 시간을 올린 뒤 링크를 공유합니다.
 
-1. [script.google.com](https://script.google.com) 접속 → **새 프로젝트**
-2. 기본 `Code.gs` 내용을 지우고 이 저장소의 `apps-script/Code.gs` 내용을 전부 붙여넣기
-3. 우측 상단 **배포 > 새 배포** 클릭
-   - 유형 선택(⚙️): **웹 앱**
-   - 실행 계정: **나(Me)**
-   - 액세스 권한: **모든 사용자(Anyone)**
-4. **배포** 클릭 → 구글 계정 권한 승인 (캘린더/시트 접근 허용)
-5. 발급된 `https://script.google.com/macros/s/…/exec` URL 복사
-6. `js/config.js`의 `API_URL`에 붙여넣고 commit & push
+저장소를 연결하지 않고 배포하면 신청을 받지 않고 "연결 준비 중" 안내를 보여 줍니다.
 
-> 예약 내역은 내 구글 드라이브에 자동 생성되는 **"커피챗 예약"** 스프레드시트에 쌓입니다.
+### 환경 변수
 
-### 2. 네이버 지도 API (선택이지만 추천)
+| 이름 | 필수 | 설명 |
+|---|---|---|
+| `KV_REST_API_URL`, `KV_REST_API_TOKEN` | 예 | Upstash 연결 시 자동 입력. `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` 도 읽습니다 |
+| `ADMIN_PASSWORD` | 아니요 | 관리자 비밀번호. 없으면 `0000` 입니다 |
 
-1. [네이버 클라우드 플랫폼 콘솔](https://console.ncloud.com) → **AI·NAVER API > Maps**
-2. Application 등록 → **Web Dynamic Map** 선택
-3. Web 서비스 URL에 GitHub Pages 주소 등록 (예: `https://doonghwi.github.io`)
-4. 발급된 **Client ID(ncpKeyId)** 를 `js/config.js`의 `NAVER_CLIENT_ID`에 붙여넣고 push
+## 지도
 
-지도 키가 없어도 리스트 모드로 정상 동작합니다.
+네이버 지도 키가 없으면 장소 선택은 리스트로 동작합니다. 지도를 쓰려면
+[네이버 클라우드 콘솔](https://console.ncloud.com)에서 Web Dynamic Map 앱을 만들고, 배포 주소를 Web 서비스 URL 에 등록한 뒤
+`public/js/config.js` 의 `NAVER_CLIENT_ID` 에 Client ID 를 넣습니다.
 
-## 예약 취소하기
+## 소개 문구 고치기
 
-**구글 캘린더에서 해당 이벤트를 삭제하면 끝!** 슬롯 참/빔은 캘린더만 보고 판단하므로,
-이벤트를 지우면 그 시간이 사이트에서 다시 신청 가능해집니다.
-스프레드시트("커피챗 예약")는 기록용 로그라서 지우지 않아도 됩니다.
+`public/index.html` 의 `id="about"` 구역에 있는 `<p>` 를 고치면 됩니다.
 
-## 안 되는 시간 수정하기
+## 로컬 실행과 테스트
 
-두 곳을 **똑같이** 고쳐야 합니다:
-
-- `js/data.js`의 `BLOCKED` (화면 표시용)
-- Apps Script의 `BLOCKED` (서버 검증용 — 수정 후 **배포 > 배포 관리 > 새 버전**으로 재배포)
-
-## 로컬 미리보기
+Node 24 가 필요합니다. 설치할 패키지는 없습니다.
 
 ```bash
-python -m http.server 8000
-# http://localhost:8000
+npm run dev   # http://localhost:3000, 데이터는 메모리에만 저장
+npm test
 ```
 
 ## 구조
 
 ```
-index.html          # 소개 + 신청 위저드
-css/style.css       # 따뜻한 커피톤 테마
-js/config.js        # API_URL, NAVER_CLIENT_ID (배포 설정)
-js/data.js          # 시간대/안 되는 시간/운동 종목
-js/places.js        # 맛집 488곳 데이터 (자동 생성)
-js/app.js           # 위저드 로직, 지도, 달력, 제출
-apps-script/Code.gs # 백엔드 (예약 저장 + 캘린더 연동)
+public/             정적 화면 (입장, 신청 위저드, 관리자)
+api/schedule.js     공개 일정. 빈 시간만 내보낸다
+api/bookings.js     신청 접수
+api/admin/*         관리자 로그인, 대시보드, 시간 올리기, 신청 취소
+lib/schedule.js     일정 규칙 (순수 함수)
+lib/store.js        Redis 저장과 동시 쓰기 처리
+lib/http.js         응답, 쿠키, 세션
 ```

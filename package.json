@@ -1,0 +1,12 @@
+{
+  "name": "coffeechat-snusv",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "test": "node --test \"test/*.test.mjs\""
+  }
+}
