@@ -427,7 +427,7 @@ function bookingHTML(b) {
         <span class="booking-with">${PARTY_LABELS[b.party]}</span>
       </div>
       <div class="booking-time">${dateLabel(b.date)} ${timeRange(b.start, b.end)}</div>
-      <div class="booking-meta">${esc(b.method)} · ${esc(b.location)}${b.isCustom ? " (직접 추천)" : ""}</div>
+      <div class="booking-meta">${esc(b.method)}${b.location ? ` · ${esc(b.location)}${b.isCustom ? " (직접 추천)" : ""}` : ""}</div>
       ${b.message ? `<div class="booking-message">${esc(b.message)}</div>` : ""}
     </div>`;
 }

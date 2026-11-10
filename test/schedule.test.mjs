@@ -16,7 +16,7 @@ const DAY = "2030-01-20";
 const id = (n) => ({ id: `b${n}`, createdAt: "2030-01-01T00:00:00.000Z" });
 const request = (over = {}) => ({
   name: "홍길동", party: "hyunwoo", date: DAY, start: 720, end: 780,
-  method: "커피", location: "카페", isCustom: false, message: "", ...over,
+  method: "커피", isCustom: false, message: "", ...over,
 });
 
 function docWith(...uploads) {
@@ -93,10 +93,17 @@ test("the public schedule never contains applicant details", () => {
   assert.ok(!body.includes("비공개이름") && !body.includes("비공개메시지"), body);
 });
 
+test("the four meeting ways are accepted without choosing a place", () => {
+  for (const method of ["식사", "커피", "줌", "기타"]) {
+    const parsed = parseBooking({ name: "홍길동", party: "both", date: DAY, start: 720, end: 780, method });
+    assert.deepEqual([parsed.method, parsed.location], [method, ""]);
+  }
+});
+
 test("invalid booking input is rejected", () => {
   const bad = [
     { name: "   " },
-    { location: "" },
+    { method: "운동" },
     { party: "__proto__" },
     { party: "constructor" },
     { method: "수면" },

@@ -37,7 +37,7 @@ async function open(date, start, end, host = "hyunwoo") {
 }
 
 const bookingBody = (date, over = {}) => ({
-  name: "홍길동", party: "hyunwoo", date, start: 720, end: 780, method: "커피", location: "카페", ...over,
+  name: "홍길동", party: "hyunwoo", date, start: 720, end: 780, method: "커피", ...over,
 });
 
 test("admin login needs the right password", async () => {
