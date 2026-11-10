@@ -92,8 +92,28 @@ test("an opened time can be booked and shows up for admins at once", async () =>
   assert.equal(row.message, "<img src=x>");
 });
 
-test("admins can only add time: nothing removes a window or cancels a booking", async () => {
-  assert.deepEqual(Object.keys(adminAvailability), ["POST"]);
+test("an admin can remove a wrongly opened time, but only their own", async () => {
+  const date = freshDate();
+  await open(date, 600, 840, "hyunwoo");
+  await open(date, 600, 840, "minseok");
+  const anonymous = await call(adminAvailability.DELETE, "DELETE", { date, start: 600, end: 840 });
+  assert.equal(anonymous.status, 401);
+
+  const cookie = await loginAs("hyunwoo");
+  assert.equal((await call(adminAvailability.DELETE, "DELETE", { date, start: 660, end: 720 }, cookie)).status, 200);
+  const free = (await call(schedule.GET, "GET")).out.free;
+  assert.deepEqual(free.hyunwoo[date], [[600, 660], [720, 840]]);
+  assert.deepEqual(free.minseok[date], [[600, 840]]);
+});
+
+test("removing an opened time does not cancel a booking inside it, and admins cannot cancel bookings", async () => {
+  const date = freshDate();
+  await open(date, 600, 840);
+  const booked = await call(bookings.POST, "POST", bookingBody(date));
+  const cookie = await loginAs("hyunwoo");
+  await call(adminAvailability.DELETE, "DELETE", { date, start: 600, end: 840 }, cookie);
+  const row = (await call(adminDashboard.GET, "GET", undefined, cookie)).out.bookings.find((b) => b.id === booked.out.id);
+  assert.equal(row.name, "홍길동");
   await assert.rejects(import("../api/admin/bookings.js"), { code: "ERR_MODULE_NOT_FOUND" });
 });
 

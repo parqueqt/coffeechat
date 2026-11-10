@@ -76,48 +76,32 @@
     <section class="card" id="apply">
       <h2>☕ 커피챗 신청</h2>
       <div class="steps-bar" id="stepsBar">
-        <div class="step-dot active" data-step="1"><span>1</span>누구와</div>
+        <div class="step-dot active" data-step="1"><span>1</span>누구와·언제</div>
         <div class="step-line"></div>
-        <div class="step-dot" data-step="2"><span>2</span>언제</div>
+        <div class="step-dot" data-step="3"><span>2</span>방법</div>
         <div class="step-line"></div>
-        <div class="step-dot" data-step="3"><span>3</span>방법</div>
+        <div class="step-dot" data-step="4"><span>3</span>어디서</div>
         <div class="step-line"></div>
-        <div class="step-dot" data-step="4"><span>4</span>어디서</div>
-        <div class="step-line"></div>
-        <div class="step-dot" data-step="5"><span>5</span>메시지</div>
+        <div class="step-dot" data-step="5"><span>4</span>메시지</div>
       </div>
 
-      <!-- STEP 1: 누구와 -->
+      <!-- STEP 1: 누구와 · 언제 (step2 는 여기로 합쳤다) -->
       <div class="step-panel" id="step1">
-        <p class="step-title">누구와 만날까요?</p>
-        <div class="method-grid">
-          <button class="method-card party-card" data-party="minseok"><span class="m-emoji">🙋</span><span class="m-name">박민석</span></button>
-          <button class="method-card party-card" data-party="hyunwoo"><span class="m-emoji">🙋</span><span class="m-name">박현우</span></button>
-          <button class="method-card party-card party-both" data-party="both"><span class="m-emoji">🙌</span><span class="m-name">두 분 다</span><span class="m-desc">두 사람이 함께 비는 시간만 보여요</span></button>
-        </div>
-      </div>
-
-      <!-- STEP 2: 언제 -->
-      <div class="step-panel hidden" id="step2">
-        <p class="step-title">언제가 좋으세요?</p>
-        <p class="hint">초록 점이 있는 날이 신청 가능한 날이에요. 이미 신청된 시간은 자동으로 빠져요.</p>
-        <p class="hint warn" id="step2Notice" role="alert"></p>
-        <div id="calendar"></div>
-        <div id="slotPicker" class="hidden">
-          <p class="slot-date-label" id="slotDateLabel"></p>
-          <div class="slot-grid" id="slotGrid"></div>
-          <div id="timeInputWrap" class="hidden">
-            <label>만나는 시간을 정해주세요 🕐</label>
-            <p class="hint" id="timeRangeHint"></p>
-            <div class="time-range-row">
-              <select class="time-select" id="startSel" aria-label="시작 시각"></select>
-              <span class="time-tilde">~</span>
-              <select class="time-select" id="endSel" aria-label="종료 시각" disabled></select>
-            </div>
+        <p class="step-title">누구와, 언제 만날까요?</p>
+        <p class="hint">가능한 시간을 누르고 만나는 시각을 정해주세요. 이미 신청된 시간은 자동으로 빠져요.</p>
+        <p class="hint warn" id="step1Notice" role="alert"></p>
+        <div id="timeBoard"></div>
+        <div id="timeInputWrap" class="hidden">
+          <p class="slot-date-label" id="pickedLabel"></p>
+          <div class="time-range-row">
+            <select class="time-select" id="startSel" aria-label="시작 시각"></select>
+            <span class="time-tilde">~</span>
+            <select class="time-select" id="endSel" aria-label="종료 시각"></select>
           </div>
+          <p class="hint">최대 2시간까지 정할 수 있어요.</p>
         </div>
         <div class="nav-row">
-          <button class="btn-back" data-back="1">← 이전</button>
+          <span></span>
           <button class="btn-next hidden" id="toStep3">다음 →</button>
         </div>
       </div>
@@ -132,7 +116,7 @@
           <button class="method-card" data-method="기타"><span class="m-emoji">✨</span><span class="m-name">기타</span><span class="m-desc">독서, 노래방 등 자유롭게!</span></button>
         </div>
         <div class="nav-row">
-          <button class="btn-back" data-back="2">← 이전</button>
+          <button class="btn-back" data-back="1">← 이전</button>
           <span></span>
         </div>
       </div>
@@ -184,7 +168,8 @@
   <main>
     <section class="card">
       <h2>🗓️ 내 캘린더</h2>
-      <p class="hint">PC는 시간표를 드래그하고, 휴대폰은 시작 칸과 끝 칸을 차례로 누르면 가능한 시간이 올라가요. 옆 날짜까지 끌면 여러 날에 같은 시간이 올라가요. 올린 시간은 지울 수 없으니 확인하고 올려주세요. 신청 칸을 누르면 자세히 볼 수 있어요.</p>
+      <p class="hint">아래 버튼으로 날짜와 시간만 골라 올리거나, 시간표를 드래그(휴대폰은 시작 칸과 끝 칸을 차례로 누르기)해서 올려요. 초록 칸을 누르면 지울 수 있고, 주황 칸을 누르면 신청 내용을 볼 수 있어요.</p>
+      <button type="button" class="btn-next add-window" id="addWindowBtn">＋ 가능한 시간 추가</button>
       <div class="week-toolbar">
         <button type="button" class="cal-nav" data-week="-1" aria-label="이전">‹</button>
         <span id="weekLabel"></span>
@@ -207,6 +192,7 @@
 
     <section class="card">
       <h2>🕐 내가 올린 시간</h2>
+      <p class="hint">✕ 를 누르면 지워져요. 이미 들어온 신청은 함께 지워지지 않아요.</p>
       <div id="myWindows"></div>
     </section>
   </main>

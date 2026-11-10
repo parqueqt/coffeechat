@@ -1,12 +1,13 @@
 // ===== 커피챗 신청 앱 =====
-// 흐름: 입장(이름) → 1 누구와 → 2 언제(날짜/시간대/시각) → 3 방법 → 4 어디서 → 5 메시지+제출
+// 흐름: 입장(이름) → 1 누구와·언제(가능 시간 고르고 시각 정하기) → 3 방법 → 4 어디서 → 5 메시지+제출
+// 예전 2단계(달력)는 1단계로 합쳤다. 단계 번호는 step3~5 id 를 그대로 쓰려고 건너뛴다.
 "use strict";
 
 const state = {
   name: null,
   party: null,       // hyunwoo | minseok | both
   date: null,        // "YYYY-MM-DD"
-  slot: null,        // 시간대 key
+  window: null,      // 고른 가능 시간 [시작분, 끝분]
   time: null,        // 시작 "HH:MM"
   endTime: null,     // 종료 "HH:MM" (24:00 가능)
   method: null,      // 식사 | 커피 | 운동 | 기타
@@ -18,7 +19,6 @@ const state = {
 
 // status: loading | ready | error. free: { party: { date: [[시작분, 끝분], ...] } }
 const schedule = { status: "loading", today: null, free: {} };
-let calView = null;
 
 // ---------- 유틸 ----------
 const $ = (sel) => document.querySelector(sel);
@@ -44,30 +44,6 @@ function dateLabel(key) {
   return `${month}월 ${day}일 (${DOW_KO[dowOf(key)]})`;
 }
 
-const monthIndex = ({ year, month }) => year * 12 + month;
-
-function shiftMonth({ year, month }, delta) {
-  const moved = new Date(year, month - 1 + delta, 1);
-  return { year: moved.getFullYear(), month: moved.getMonth() + 1 };
-}
-
-function monthHeaderHTML({ year, month }, canPrev, canNext) {
-  return `<div class="cal-header">
-    <button type="button" class="cal-nav" data-nav="-1" aria-label="이전 달" ${canPrev ? "" : "disabled"}>‹</button>
-    <span>${year}년 ${month}월</span>
-    <button type="button" class="cal-nav" data-nav="1" aria-label="다음 달" ${canNext ? "" : "disabled"}>›</button>
-  </div>`;
-}
-
-function monthGridHTML({ year, month }, dayCell) {
-  const firstDow = new Date(year, month - 1, 1).getDay();
-  const daysInMonth = new Date(year, month, 0).getDate();
-  let html = DOW_KO.map((d) => `<div class="cal-dow">${d}</div>`).join("");
-  html += `<div class="cal-empty"></div>`.repeat(firstDow);
-  for (let day = 1; day <= daysInMonth; day++) html += dayCell(dateKey(year, month, day), day);
-  return `<div class="cal-grid">${html}</div>`;
-}
-
 async function callApi(path, method, body) {
   const res = await fetch(path, {
     method,
@@ -77,8 +53,6 @@ async function callApi(path, method, body) {
   });
   return res.json();
 }
-
-function slotByKey(key) { return SLOTS.find((s) => s.key === key); }
 
 // ---------- 영업시간 판단 ----------
 const DOW_KO = ["일", "월", "화", "수", "목", "금", "토"];
@@ -132,7 +106,7 @@ function hoursLine(p) {
 
 // ---------- 스텝 이동 ----------
 function goStep(n) {
-  ["step1", "step2", "step3", "step4", "step5", "stepDone"].forEach((id) => $("#" + id).classList.add("hidden"));
+  ["step1", "step3", "step4", "step5", "stepDone"].forEach((id) => $("#" + id).classList.add("hidden"));
   $("#" + (n === "done" ? "stepDone" : "step" + n)).classList.remove("hidden");
   $$(".step-dot").forEach((dot) => {
     const s = Number(dot.dataset.step);
@@ -156,6 +130,7 @@ function enterApp() {
   $("#gate").classList.add("hidden");
   $("#app").classList.remove("hidden");
   window.scrollTo(0, 0);
+  renderTimeBoard();
   loadSchedule();
 }
 
@@ -171,162 +146,101 @@ $("#enterBtn").addEventListener("click", enterApp);
 $("#applicantName").addEventListener("keydown", (e) => { if (e.key === "Enter") e.preventDefault(); });
 $("#applicantName").addEventListener("keyup", (e) => { if (e.key === "Enter") enterApp(); });
 
-// ---------- STEP 1: 누구와 ----------
-function clearWhen() {
-  state.date = null; state.slot = null; state.time = null; state.endTime = null;
-  $("#step2Notice").textContent = "";
-}
-
-$$(".party-card").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    state.party = btn.dataset.party;
-    clearWhen();
-    calView = null;
-    renderCalendar();
-    goStep(2);
-    loadSchedule();
-  });
-});
-
-// ---------- STEP 2: 언제 ----------
-const STEP_MIN = 30;           // 드롭다운 간격(분)
-const DEFAULT_DURATION = 60;   // 시작 시각 선택 시 기본 종료 = +1시간
+// ---------- STEP 1: 누구와 · 언제 ----------
+// 관리자가 올린 시간을 사람별로 나열한다. 시간을 누르면 그 안에서 시작·종료 시각을 고른다.
+const STEP_MIN = 30;           // 시각 간격(분). admin.js 도 쓴다
+const DEFAULT_DURATION = 60;   // 기본 만남 길이
 const MAX_DURATION = 120;      // 서버 검증과 같은 값
-const ENDSEL_PLACEHOLDER = `<option value="">종료 시각</option>`;
+const BOARD_SECTIONS = [
+  { party: "hyunwoo", title: "🙋 박현우 가능 시간", empty: "아직 올라온 시간이 없어요." },
+  { party: "minseok", title: "🙋 박민석 가능 시간", empty: "아직 올라온 시간이 없어요." },
+  { party: "both", title: "🙌 두 분 함께 가능한 시간", empty: null }, // 없으면 구역째 숨긴다
+];
 
-function freeOn(date) { return (schedule.free[state.party] || {})[date] || []; }
-
-function startOptions(date, slot) {
-  const list = [];
-  for (let m = slot.from * 60; m < slot.to * 60; m += STEP_MIN) {
-    if (freeOn(date).some(([s, e]) => s <= m && m + STEP_MIN <= e)) list.push(m);
-  }
-  return list;
+function clearWhen() {
+  Object.assign(state, { party: null, date: null, window: null, time: null, endTime: null });
+  $("#step1Notice").textContent = "";
+  $("#timeInputWrap").classList.add("hidden");
+  updateNext1();
 }
 
-function isSlotFree(date, slotKey) { return startOptions(date, slotByKey(slotKey)).length > 0; }
-function freeSlotCount(date) { return SLOTS.filter((s) => isSlotFree(date, s.key)).length; }
-
-function maxEndMin(date, startMin) {
-  const interval = freeOn(date).find(([s, e]) => s <= startMin && startMin < e);
-  return Math.min(interval[1], startMin + MAX_DURATION);
+function boardDays(party) {
+  return Object.entries(schedule.free[party] || {})
+    .map(([date, list]) => [date, list.filter(([s, e]) => e - s >= STEP_MIN)])
+    .filter(([, list]) => list.length)
+    .sort(([a], [b]) => a.localeCompare(b));
 }
 
-function openDates() {
-  return Object.keys(schedule.free[state.party] || {}).filter((d) => freeSlotCount(d) > 0).sort();
-}
+const isPicked = (party, date, s, e) =>
+  state.party === party && state.date === date && state.window?.[0] === s && state.window?.[1] === e;
 
-function renderCalendar() {
-  const cal = $("#calendar");
-  $("#slotPicker").classList.add("hidden");
-  updateNext2();
+function renderTimeBoard() {
+  const board = $("#timeBoard");
   if (schedule.status !== "ready") {
-    cal.innerHTML = `<p class="hint">${schedule.status === "error"
+    board.innerHTML = `<p class="hint">${schedule.status === "error"
       ? "⚠️ 일정을 불러오지 못했어요. 잠시 후 새로고침해주세요."
-      : "⏳ 열린 시간을 불러오는 중…"}</p>`;
+      : "⏳ 가능한 시간을 불러오는 중…"}</p>`;
     return;
   }
-  const open = openDates();
-  const todayMonth = parseDateKey(schedule.today);
-  calView = calView || (open.length ? parseDateKey(open[0]) : todayMonth);
-  const lastMonth = open.length ? parseDateKey(open[open.length - 1]) : todayMonth;
-  const canPrev = monthIndex(calView) > monthIndex(todayMonth);
-  const canNext = monthIndex(calView) < monthIndex(lastMonth);
-  const grid = monthGridHTML(calView, (key, day) => {
-    const free = open.includes(key) ? freeSlotCount(key) : 0;
-    return `<button class="cal-day ${state.date === key ? "selected" : ""}" data-date="${key}" ${free ? "" : "disabled"}>
-      ${day}${free ? `<span class="avail-dots">${"●".repeat(Math.min(free, 4))}</span>` : ""}</button>`;
-  });
-  const empty = open.length ? "" : `<p class="hint">🙏 ${state.party === "both"
-    ? "두 분이 함께 비는 시간이 아직 없어요. 한 분씩 골라보시거나 조금 뒤에 다시 와주세요!"
-    : "아직 열린 시간이 없어요. 곧 올라올 거예요!"}</p>`;
-  cal.innerHTML = monthHeaderHTML(calView, canPrev, canNext) + grid + empty;
-  cal.querySelectorAll("[data-nav]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      calView = shiftMonth(calView, Number(btn.dataset.nav));
-      clearWhen();
-      renderCalendar();
-    });
-  });
-  cal.querySelectorAll(".cal-day:not(:disabled)").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      clearWhen();
-      state.date = btn.dataset.date;
-      cal.querySelectorAll(".cal-day").forEach((b) => b.classList.toggle("selected", b.dataset.date === state.date));
-      renderSlots();
-      updateNext2();
-    });
-  });
-}
-
-function renderSlots() {
-  $("#slotPicker").classList.remove("hidden");
-  $("#slotDateLabel").textContent = `${dateLabel(state.date)}, 시간대를 골라주세요`;
-  $("#slotGrid").innerHTML = SLOTS.map((s) => {
-    const free = isSlotFree(state.date, s.key);
-    return `<button class="slot-chip ${state.slot === s.key ? "selected" : ""}" data-slot="${s.key}" ${free ? "" : "disabled"}>
-      ${s.key}<small>${s.label}</small></button>`;
+  board.innerHTML = BOARD_SECTIONS.map(({ party, title, empty }) => {
+    const days = boardDays(party);
+    if (!days.length && empty === null) return "";
+    const rows = days.map(([date, list]) => `
+      <div class="board-row">
+        <span class="board-date">${dateLabel(date)}</span>
+        <span class="board-chips">${list.map(([s, e]) =>
+          `<button type="button" class="time-chip ${isPicked(party, date, s, e) ? "selected" : ""}" data-party="${party}" data-date="${date}" data-start="${s}" data-end="${e}">${minToHHMM(s)}~${minToHHMM(e)}</button>`
+        ).join("")}</span>
+      </div>`).join("");
+    return `<div class="board-section"><p class="board-title">${title}</p>${rows || `<p class="hint">${empty}</p>`}</div>`;
   }).join("");
-  $$("#slotGrid .slot-chip:not(:disabled)").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      state.slot = btn.dataset.slot;
-      $$("#slotGrid .slot-chip").forEach((b) => b.classList.toggle("selected", b.dataset.slot === state.slot));
-      showTimeInput();
-      updateNext2();
-    });
-  });
-  $("#timeInputWrap").classList.add("hidden");
 }
 
-function resetEndSel() {
-  const endSel = $("#endSel");
-  endSel.innerHTML = ENDSEL_PLACEHOLDER;
-  endSel.disabled = true;
-  state.endTime = null;
-}
+$("#timeBoard").addEventListener("click", (e) => {
+  const chip = e.target.closest(".time-chip");
+  if (!chip) return;
+  const s = Number(chip.dataset.start);
+  const end = Number(chip.dataset.end);
+  Object.assign(state, { party: chip.dataset.party, date: chip.dataset.date, window: [s, end] });
+  $("#step1Notice").textContent = "";
+  $$("#timeBoard .time-chip").forEach((b) => b.classList.toggle("selected", b === chip));
+  const starts = [];
+  for (let m = s; m + STEP_MIN <= end; m += STEP_MIN) starts.push(m);
+  $("#startSel").innerHTML = starts.map((m) => `<option value="${m}">${minToHHMM(m)}</option>`).join("");
+  state.time = minToHHMM(s);
+  renderEndOptions();
+  $("#pickedLabel").textContent = `${PARTY_LABELS[state.party]} · ${dateLabel(state.date)}, 만나는 시각을 정해주세요 🕐`;
+  $("#timeInputWrap").classList.remove("hidden");
+  updateNext1();
+  $("#timeInputWrap").scrollIntoView({ behavior: "smooth", block: "nearest" });
+});
 
 function renderEndOptions() {
-  const endSel = $("#endSel");
   const startMin = toMin(state.time);
-  const maxEnd = maxEndMin(state.date, startMin);
+  const maxEnd = Math.min(state.window[1], startMin + MAX_DURATION);
   const opts = [];
   for (let m = startMin + STEP_MIN; m <= maxEnd; m += STEP_MIN) opts.push(m);
-  endSel.innerHTML = opts.map((m) => `<option value="${m}">${minToHHMM(m)}</option>`).join("");
   const def = opts.includes(startMin + DEFAULT_DURATION) ? startMin + DEFAULT_DURATION : opts[opts.length - 1];
-  endSel.value = String(def);
-  endSel.disabled = false;
+  $("#endSel").innerHTML = opts.map((m) => `<option value="${m}" ${m === def ? "selected" : ""}>${minToHHMM(m)}</option>`).join("");
   state.endTime = minToHHMM(def);
 }
 
-function showTimeInput() {
-  const s = slotByKey(state.slot);
-  $("#timeInputWrap").classList.remove("hidden");
-  $("#timeRangeHint").textContent = `${s.key} 시간대(${s.label})에서 시작 시각을 고르면 종료 시각을 정할 수 있어요 (최대 2시간)`;
-  state.time = null;
-  $("#startSel").innerHTML = `<option value="">시작 시각</option>` +
-    startOptions(state.date, s).map((m) => `<option value="${m}">${minToHHMM(m)}</option>`).join("");
-  resetEndSel();
-}
-
 $("#startSel").addEventListener("change", (e) => {
-  const v = e.target.value;
-  if (!v) { state.time = null; resetEndSel(); updateNext2(); return; }
-  state.time = minToHHMM(Number(v));
+  state.time = minToHHMM(Number(e.target.value));
   renderEndOptions();
-  updateNext2();
+  updateNext1();
 });
 $("#endSel").addEventListener("change", (e) => {
-  state.endTime = e.target.value ? minToHHMM(Number(e.target.value)) : null;
-  updateNext2();
+  state.endTime = minToHHMM(Number(e.target.value));
+  updateNext1();
 });
 
 function timeRangeLabel() { return `${state.time}~${state.endTime}`; }
 
-function validStep2() { return state.date && state.slot && state.time && state.endTime; }
-function updateNext2() { $("#toStep3").classList.toggle("hidden", !validStep2()); }
+function validStep1() { return state.party && state.date && state.window && state.time && state.endTime; }
+function updateNext1() { $("#toStep3").classList.toggle("hidden", !validStep1()); }
 
-$("#step2 .btn-back").addEventListener("click", () => goStep(1));
-$("#toStep3").addEventListener("click", () => { if (validStep2()) goStep(3); });
+$("#toStep3").addEventListener("click", () => { if (validStep1()) goStep(3); });
 
 // ---------- STEP 3: 방법 ----------
 $$(".method-card[data-method]").forEach((btn) => {
@@ -337,7 +251,7 @@ $$(".method-card[data-method]").forEach((btn) => {
     goStep(4);
   });
 });
-$("#step3 .btn-back").addEventListener("click", () => goStep(2));
+$("#step3 .btn-back").addEventListener("click", () => goStep(1));
 
 // ---------- STEP 4: 어디서 ----------
 function openFilterHint() {
@@ -674,7 +588,7 @@ function renderStep5() {
     <div><b>이름</b> ${esc(state.name)}</div>
     <div><b>누구와</b> ${PARTY_LABELS[state.party]}</div>
     <div><b>날짜</b> ${dateLabel(state.date)}</div>
-    <div><b>시간</b> ${state.slot} · ${timeRangeLabel()}</div>
+    <div><b>시간</b> ${timeRangeLabel()}</div>
     <div><b>방법</b> ${({ 식사: "🍚", 커피: "☕", 운동: "🏸", 기타: "✨" })[state.method]} ${state.method}</div>
     <div><b>${state.method === "운동" ? "종목" : "장소"}</b> ${esc(state.subLabel)}${state.subType === "custom" ? " (직접 추천)" : ""}</div>`;
   $("#step5 .btn-back").onclick = () => goStep(4);
@@ -713,9 +627,9 @@ $("#submitBtn").addEventListener("click", async () => {
     } else if (out.error === "slot_taken") {
       clearWhen();
       await loadSchedule();
-      renderCalendar();
-      $("#step2Notice").textContent = "😢 아쉽게도 방금 다른 분이 그 시간을 선택했어요. 다른 시간을 골라주세요!";
-      goStep(2);
+      renderTimeBoard();
+      $("#step1Notice").textContent = "😢 아쉽게도 방금 다른 분이 그 시간을 선택했어요. 다른 시간을 골라주세요!";
+      goStep(1);
     } else {
       status.textContent = SUBMIT_ERRORS[out.error] || "⚠️ 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
     }
@@ -738,12 +652,12 @@ async function loadSchedule() {
     console.warn("schedule load failed", err);
     if (schedule.status !== "ready") schedule.status = "error";
   }
-  if (!$("#step2").classList.contains("hidden") && !state.date) renderCalendar();
+  if (!$("#step1").classList.contains("hidden") && !state.window) renderTimeBoard();
 }
 
-// 날짜를 고르기 전까지만 갱신한다. 고른 뒤에 다시 그리면 입력 중인 시간이 사라진다.
+// 시간을 고르기 전까지만 갱신한다. 고른 뒤에 다시 그리면 고른 표시가 흔들린다.
 setInterval(() => {
-  if (!document.hidden && !$("#app").classList.contains("hidden") && !$("#step2").classList.contains("hidden") && !state.date) {
+  if (!document.hidden && !$("#app").classList.contains("hidden") && !$("#step1").classList.contains("hidden") && !state.window) {
     loadSchedule();
   }
 }, 15000);

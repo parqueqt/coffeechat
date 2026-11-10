@@ -24,8 +24,9 @@ const admin = {
   viewDays: DESKTOP_DAYS,
   // kind: idle | pressing | dragging | anchored | saving
   gesture: { kind: "idle" },
-  // 신청 블록을 누르면 그 신청의 id. 관리자는 보기만 하고 지우거나 취소하지 않는다.
-  sheetBookingId: null,
+  // null | { kind: "booking", id } | { kind: "window", date, start, end } | { kind: "add" }
+  // 신청은 보기만 한다(취소 없음). 올린 시간은 지울 수 있다.
+  sheet: null,
 };
 
 // ---------- 로그인 ----------
@@ -175,9 +176,9 @@ function renderWeekBlocks() {
   $$("#weekGrid .week-day").forEach((column) => {
     const date = column.dataset.date;
     const windows = (admin.availability[date] || []).map(([s, e]) =>
-      `<div class="block block-open" style="${blockStyle(s, e)}">가능 ${timeRange(s, e)}</div>`);
+      `<button type="button" class="block block-open" style="${blockStyle(s, e)}" data-kind="window" data-start="${s}" data-end="${e}">가능 ${timeRange(s, e)}</button>`);
     const booked = admin.bookings.filter((b) => b.date === date && isMine(b)).map((b) =>
-      `<button type="button" class="block block-booked" style="${blockStyle(b.start, b.end)}" data-id="${esc(b.id)}" title="${esc(b.name)}"><b>${esc(b.name)}</b> ${timeRange(b.start, b.end)}</button>`);
+      `<button type="button" class="block block-booked" style="${blockStyle(b.start, b.end)}" data-kind="booking" data-id="${esc(b.id)}" title="${esc(b.name)}"><b>${esc(b.name)}</b> ${timeRange(b.start, b.end)}</button>`);
     column.querySelector(".week-blocks").innerHTML = windows.join("") + booked.join("");
   });
 }
@@ -253,7 +254,7 @@ $("#weekGrid").addEventListener("pointerdown", (e) => {
     pointerId: e.pointerId,
     from: cellAt(e.clientX, e.clientY),
     anchor: admin.gesture.kind === "anchored" ? admin.gesture.from : null,
-    block: e.target.closest(".block-booked"),
+    block: e.target.closest(".block"),
     isTouch,
     x: e.clientX,
     y: e.clientY,
@@ -299,45 +300,123 @@ window.addEventListener("keydown", (e) => {
 });
 
 $("#weekGrid").addEventListener("click", (e) => {
-  const block = e.target.closest(".block-booked");
+  const block = e.target.closest(".block");
   if (block && e.detail === 0) openSheet(block); // 키보드 Enter
 });
 
 function setAdminStatus(text) { $("#adminStatus").textContent = text; }
 
+// 드래그·두 번 탭·추가 폼이 모두 이 함수로 올린다.
+async function uploadWindow(dates, start, end) {
+  const out = await callApi("/api/admin/availability", "POST", { dates, start, end }).catch(() => ({ ok: false }));
+  if (!out.ok) return out.error === "past_date" ? "⚠️ 지난 날짜에는 올릴 수 없어요." : "⚠️ 올리지 못했어요. 잠시 후 다시 시도해주세요.";
+  await refreshDashboard().catch(() => {});
+  const when = dates.length > 1 ? `${dates.length}일` : dateLabel(dates[0]);
+  return `✅ ${when} ${timeRange(start, end)} 올렸어요. 신청 화면에 바로 반영돼요.`;
+}
+
+async function removeWindow(date, start, end) {
+  await callApi("/api/admin/availability", "DELETE", { date, start, end }).catch(() => {});
+  await refreshDashboard().catch(() => {});
+  setAdminStatus(`🗑️ ${dateLabel(date)} ${timeRange(start, end)} 지웠어요.`);
+}
+
 async function saveSelection(from, to) {
   const { dates, start, end } = selectionRange(from, to);
   setGesture({ kind: "saving", from, to });
-  const out = await callApi("/api/admin/availability", "POST", { dates, start, end }).catch(() => ({ ok: false }));
-  if (out.ok) {
-    await refreshDashboard().catch(() => {});
-    const when = dates.length > 1 ? `${dates.length}일` : dateLabel(dates[0]);
-    setAdminStatus(`✅ ${when} ${timeRange(start, end)} 올렸어요. 신청 화면에 바로 반영돼요.`);
-  } else {
-    setAdminStatus("⚠️ 올리지 못했어요. 잠시 후 다시 시도해주세요.");
-  }
+  setAdminStatus(await uploadWindow(dates, start, end));
   setGesture({ kind: "idle" });
 }
 
-// ---------- 상세 시트 ----------
+// ---------- 시트: 신청 보기 · 올린 시간 지우기 · 가능한 시간 추가 ----------
 function openSheet(block) {
-  admin.sheetBookingId = block.dataset.id;
+  admin.sheet = block.dataset.kind === "booking"
+    ? { kind: "booking", id: block.dataset.id }
+    : { kind: "window", date: block.closest(".week-day").dataset.date, start: Number(block.dataset.start), end: Number(block.dataset.end) };
   renderSheet();
 }
 
 function closeSheet() {
-  admin.sheetBookingId = null;
+  admin.sheet = null;
   renderSheet();
 }
 
+// 추가 폼은 입력 중일 수 있으니 10초 새로고침이 다시 그리지 않는다.
 function renderSheet() {
-  const booking = admin.bookings.find((b) => b.id === admin.sheetBookingId);
-  $("#sheet").classList.toggle("hidden", !booking);
-  if (!booking) { admin.sheetBookingId = null; return; }
-  $("#sheetBody").innerHTML = bookingHTML(booking);
+  if (admin.sheet?.kind === "add") return;
+  const body = sheetBodyHTML();
+  $("#sheet").classList.toggle("hidden", body === null);
+  if (body === null) { admin.sheet = null; return; }
+  $("#sheetBody").innerHTML = body;
 }
 
+function sheetBodyHTML() {
+  const s = admin.sheet;
+  if (!s) return null;
+  if (s.kind === "booking") {
+    const booking = admin.bookings.find((b) => b.id === s.id);
+    return booking ? bookingHTML(booking) : null;
+  }
+  const exists = (admin.availability[s.date] || []).some(([a, b]) => a === s.start && b === s.end);
+  if (!exists) return null;
+  return `
+    <p class="sheet-title">${dateLabel(s.date)} ${timeRange(s.start, s.end)}</p>
+    <p class="hint">신청을 받을 수 있게 열어 둔 시간이에요. 지워도 이미 들어온 신청은 그대로 남아요.</p>
+    <button type="button" class="sheet-delete" id="sheetDelete">이 시간 지우기</button>`;
+}
+
+const timeOptions = (from, to, selected) => {
+  const opts = [];
+  for (let m = from; m <= to; m += STEP_MIN) opts.push(`<option value="${m}" ${m === selected ? "selected" : ""}>${minToHHMM(m)}</option>`);
+  return opts.join("");
+};
+
+function fillAddEnd() {
+  const start = Number($("#addStart").value);
+  const keep = Number($("#addEnd").value);
+  $("#addEnd").innerHTML = timeOptions(start + STEP_MIN, 1440, keep > start ? keep : Math.min(start + 60, 1440));
+}
+
+function openAddSheet() {
+  closeSheet();
+  admin.sheet = { kind: "add" };
+  $("#sheetBody").innerHTML = `
+    <p class="sheet-title">➕ 가능한 시간 추가</p>
+    <label class="sheet-label" for="addDate">날짜</label>
+    <input type="date" class="time-select sheet-date" id="addDate" min="${admin.today}" value="${admin.today}">
+    <label class="sheet-label">시간</label>
+    <div class="time-range-row">
+      <select class="time-select" id="addStart" aria-label="시작 시각">${timeOptions(0, 1440 - STEP_MIN, 720)}</select>
+      <span class="time-tilde">~</span>
+      <select class="time-select" id="addEnd" aria-label="종료 시각"></select>
+    </div>
+    <button type="button" class="btn-next sheet-submit" id="addSave">추가하기</button>
+    <p class="hint" id="addStatus" role="status"></p>`;
+  fillAddEnd();
+  $("#addStart").addEventListener("change", fillAddEnd);
+  $("#sheet").classList.remove("hidden");
+}
+
+$("#addWindowBtn").addEventListener("click", openAddSheet);
 $("#sheetClose").addEventListener("click", closeSheet);
+$("#sheetBody").addEventListener("click", async (e) => {
+  if (e.target.closest("#sheetDelete")) {
+    const { date, start, end } = admin.sheet;
+    admin.sheet = null;
+    await removeWindow(date, start, end);
+    renderSheet();
+    return;
+  }
+  if (e.target.closest("#addSave")) {
+    const date = $("#addDate").value;
+    if (!date) { $("#addStatus").textContent = "⚠️ 날짜를 골라주세요."; return; }
+    $("#addSave").disabled = true;
+    const message = await uploadWindow([date], Number($("#addStart").value), Number($("#addEnd").value));
+    $("#addSave").disabled = false;
+    $("#addStatus").textContent = message;
+    setAdminStatus(message);
+  }
+});
 
 // ---------- 신청 현황 ----------
 function bookingHTML(b) {
@@ -365,10 +444,15 @@ function renderMyWindows() {
     <div class="window-row">
       <span class="window-date">${dateLabel(date)}</span>
       <span class="window-chips">${admin.availability[date].map(([s, e]) =>
-        `<span class="window-chip">${timeRange(s, e)}</span>`
+        `<button type="button" class="window-chip" data-date="${date}" data-start="${s}" data-end="${e}" aria-label="${timeRange(s, e)} 지우기">${timeRange(s, e)} ✕</button>`
       ).join("")}</span>
     </div>`).join("") || `<p class="hint">아직 올린 시간이 없어요.</p>`;
 }
+
+$("#myWindows").addEventListener("click", (e) => {
+  const chip = e.target.closest(".window-chip");
+  if (chip) removeWindow(chip.dataset.date, Number(chip.dataset.start), Number(chip.dataset.end));
+});
 
 refreshDashboard().catch(() => {});
 setInterval(() => {

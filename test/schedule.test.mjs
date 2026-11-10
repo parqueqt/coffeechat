@@ -8,6 +8,7 @@ import {
   kstNow,
   parseBooking,
   publicSchedule,
+  removeAvailability,
 } from "../lib/schedule.js";
 
 const NOW = { date: "2030-01-10", minute: 600 };
@@ -50,9 +51,16 @@ test("a booking overlapping an earlier one is refused", () => {
   assert.throws(() => createBooking(doc, request({ name: "김철수", start: 750, end: 810 }), NOW, id(2)), { code: "slot_taken" });
 });
 
-test("a booked time stays closed even if the same window is uploaded again", () => {
+test("removing part of an opened window keeps the rest", () => {
+  const doc = docWith(["hyunwoo", 600, 840]);
+  removeAvailability(doc, "hyunwoo", { date: DAY, start: 660, end: 720 });
+  assert.deepEqual(doc.availability.hyunwoo[DAY], [[600, 660], [720, 840]]);
+});
+
+test("a booked time stays closed even if the window is removed and opened again", () => {
   const doc = docWith(["hyunwoo", 600, 840]);
   createBooking(doc, request({ start: 720, end: 780 }), NOW, id(1));
+  removeAvailability(doc, "hyunwoo", { date: DAY, start: 600, end: 840 });
   addAvailability(doc, "hyunwoo", { dates: [DAY], start: 600, end: 840 }, NOW);
   assert.throws(() => createBooking(doc, request({ name: "김철수", start: 720, end: 780 }), NOW, id(2)), { code: "slot_taken" });
 });
