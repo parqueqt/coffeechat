@@ -151,7 +151,7 @@ test("malformed bodies are rejected without a server error", async () => {
 
 test("a Vercel deployment without storage refuses instead of using memory", async () => {
   const saved = { ...process.env };
-  for (const key of ["KV_REST_API_URL", "KV_REST_API_TOKEN", "UPSTASH_REDIS_REST_URL", "UPSTASH_REDIS_REST_TOKEN"]) delete process.env[key];
+  for (const key of ["BLOB_READ_WRITE_TOKEN", "BLOB_STORE_ID"]) delete process.env[key];
   process.env.VERCEL = "1";
   try {
     const { status, out } = await call(schedule.GET, "GET");
