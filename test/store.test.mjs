@@ -4,7 +4,10 @@ import { addAvailability, createBooking } from "../lib/schedule.js";
 import { blobStore, readDoc, updateDoc } from "../lib/store.js";
 
 // Blob 서버처럼 굴러가는 가짜. 비교와 교체 사이에 await 가 없어 서버 쪽 원자성을 흉내 낸다.
+// get() 은 실제처럼 CDN 이 압축하며 약한 ETag(W/"…")를 돌려준다. ifMatch 에 맞는 원본 ETag 는 head() 만 준다.
+// (2026-11-10 미리보기에서 get() 의 ETag 로 ifMatch 를 걸어 모든 쓰기가 busy 가 됐다.)
 class PreconditionFailed extends Error {}
+class NotFound extends Error {}
 
 function fakeBlob() {
   const files = new Map();
@@ -15,11 +18,18 @@ function fakeBlob() {
     files,
     getOptions,
     BlobPreconditionFailedError: PreconditionFailed,
+    BlobNotFoundError: NotFound,
     async get(pathname, options) {
       getOptions.push(options);
       await jitter();
       const file = files.get(pathname);
-      return file ? { statusCode: 200, stream: new Response(file.body).body, blob: { etag: file.etag } } : null;
+      return file ? { statusCode: 200, stream: new Response(file.body).body, blob: { etag: `W/${file.etag}` } } : null;
+    },
+    async head(pathname) {
+      await jitter();
+      const file = files.get(pathname);
+      if (!file) throw new NotFound();
+      return { etag: file.etag };
     },
     async put(pathname, body, options) {
       await jitter();
@@ -76,6 +86,8 @@ test("twenty people booking the same time at once leaves exactly one booking", a
 test("every read bypasses the cache so a closed time never looks open", async () => {
   const sdk = fakeBlob();
   const store = blobStore(sdk, "test");
+  await updateDoc(store, (doc) => addAvailability(doc, "hyunwoo", { dates: [DAY], start: 600, end: 660 }, NOW));
+  await store.saveSession("x", "hyunwoo");
   await readDoc(store);
   await store.findSession("x");
   assert.ok(sdk.getOptions.length >= 2);

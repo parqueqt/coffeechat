@@ -54,7 +54,7 @@ npm test
 public/             정적 화면 (입장, 신청 위저드, 관리자)
 api/schedule.js     공개 일정. 빈 시간만 내보낸다
 api/bookings.js     신청 접수
-api/admin/*         관리자 로그인, 대시보드, 시간 올리기, 신청 취소
+api/admin/*         관리자 로그인, 대시보드, 시간 올리기·지우기 (신청 취소는 없음)
 lib/schedule.js     일정 규칙 (순수 함수)
 lib/store.js        Blob 저장과 동시 쓰기 처리 (ETag 를 맞춰 본 뒤에만 쓴다)
 lib/http.js         응답, 쿠키, 세션
