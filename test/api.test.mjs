@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as adminAvailability from "../api/admin/availability.js";
-import * as adminBookings from "../api/admin/bookings.js";
 import * as adminDashboard from "../api/admin/dashboard.js";
 import * as adminSession from "../api/admin/session.js";
 import * as bookings from "../api/bookings.js";
@@ -73,7 +72,6 @@ test("logout ends the session", async () => {
 test("anonymous callers cannot use admin endpoints or read applicants", async () => {
   const date = freshDate();
   assert.equal((await call(adminAvailability.POST, "POST", { dates: [date], start: 600, end: 720 })).status, 401);
-  assert.equal((await call(adminBookings.DELETE, "DELETE", { id: "x" })).status, 401);
   assert.equal((await call(adminAvailability.POST, "POST", { dates: [date], start: 600, end: 720 }, "cc_admin=forged")).status, 401);
   const dashboard = await call(adminDashboard.GET, "GET");
   assert.deepEqual(dashboard.out, { ok: true, host: null });
@@ -92,9 +90,11 @@ test("an opened time can be booked and shows up for admins at once", async () =>
   const row = (await call(adminDashboard.GET, "GET", undefined, cookie)).out.bookings.find((b) => b.id === booked.out.id);
   assert.equal(row.name, "홍길동");
   assert.equal(row.message, "<img src=x>");
+});
 
-  assert.equal((await call(adminBookings.DELETE, "DELETE", { id: booked.out.id }, cookie)).status, 200);
-  assert.deepEqual((await call(schedule.GET, "GET")).out.free.hyunwoo[date], [[600, 840]]);
+test("admins can only add time: nothing removes a window or cancels a booking", async () => {
+  assert.deepEqual(Object.keys(adminAvailability), ["POST"]);
+  await assert.rejects(import("../api/admin/bookings.js"), { code: "ERR_MODULE_NOT_FOUND" });
 });
 
 test("a time nobody opened cannot be booked", async () => {

@@ -20,13 +20,12 @@ const admin = {
   bookings: [],
   lastPayload: "",
   seenBookingIds: null,
-  armedCancelId: null,
   viewStart: null,
   viewDays: DESKTOP_DAYS,
   // kind: idle | pressing | dragging | anchored | saving
   gesture: { kind: "idle" },
-  // null | { kind: "booking", id } | { kind: "window", date, start, end }
-  sheet: null,
+  // 신청 블록을 누르면 그 신청의 id. 관리자는 보기만 하고 지우거나 취소하지 않는다.
+  sheetBookingId: null,
 };
 
 // ---------- 로그인 ----------
@@ -168,19 +167,17 @@ function buildWeekGrid() {
   renderPreview();
 }
 
-function blockHTML(cls, attrs, start, end, label) {
-  const top = (start / STEP_MIN) * ROW_PX;
-  const height = ((end - start) / STEP_MIN) * ROW_PX - 2;
-  return `<button type="button" class="block ${cls}" style="top:${top}px;height:${height}px" ${attrs}>${label}</button>`;
+function blockStyle(start, end) {
+  return `top:${(start / STEP_MIN) * ROW_PX}px;height:${((end - start) / STEP_MIN) * ROW_PX - 2}px`;
 }
 
 function renderWeekBlocks() {
   $$("#weekGrid .week-day").forEach((column) => {
     const date = column.dataset.date;
     const windows = (admin.availability[date] || []).map(([s, e]) =>
-      blockHTML("block-open", `data-kind="window" data-start="${s}" data-end="${e}"`, s, e, `가능 ${timeRange(s, e)}`));
+      `<div class="block block-open" style="${blockStyle(s, e)}">가능 ${timeRange(s, e)}</div>`);
     const booked = admin.bookings.filter((b) => b.date === date && isMine(b)).map((b) =>
-      blockHTML("block-booked", `data-kind="booking" data-id="${esc(b.id)}" title="${esc(b.name)}"`, b.start, b.end, `<b>${esc(b.name)}</b> ${timeRange(b.start, b.end)}`));
+      `<button type="button" class="block block-booked" style="${blockStyle(b.start, b.end)}" data-id="${esc(b.id)}" title="${esc(b.name)}"><b>${esc(b.name)}</b> ${timeRange(b.start, b.end)}</button>`);
     column.querySelector(".week-blocks").innerHTML = windows.join("") + booked.join("");
   });
 }
@@ -256,7 +253,7 @@ $("#weekGrid").addEventListener("pointerdown", (e) => {
     pointerId: e.pointerId,
     from: cellAt(e.clientX, e.clientY),
     anchor: admin.gesture.kind === "anchored" ? admin.gesture.from : null,
-    block: e.target.closest(".block"),
+    block: e.target.closest(".block-booked"),
     isTouch,
     x: e.clientX,
     y: e.clientY,
@@ -302,7 +299,7 @@ window.addEventListener("keydown", (e) => {
 });
 
 $("#weekGrid").addEventListener("click", (e) => {
-  const block = e.target.closest(".block");
+  const block = e.target.closest(".block-booked");
   if (block && e.detail === 0) openSheet(block); // 키보드 Enter
 });
 
@@ -324,50 +321,23 @@ async function saveSelection(from, to) {
 
 // ---------- 상세 시트 ----------
 function openSheet(block) {
-  admin.sheet = block.dataset.kind === "booking"
-    ? { kind: "booking", id: block.dataset.id }
-    : { kind: "window", date: block.closest(".week-day").dataset.date, start: Number(block.dataset.start), end: Number(block.dataset.end) };
-  admin.armedCancelId = null;
+  admin.sheetBookingId = block.dataset.id;
   renderSheet();
 }
 
 function closeSheet() {
-  admin.sheet = null;
+  admin.sheetBookingId = null;
   renderSheet();
 }
 
 function renderSheet() {
-  const sheet = $("#sheet");
-  const body = sheetBodyHTML();
-  sheet.classList.toggle("hidden", body === null);
-  if (body === null) { admin.sheet = null; return; }
-  $("#sheetBody").innerHTML = body;
-}
-
-function sheetBodyHTML() {
-  const s = admin.sheet;
-  if (!s) return null;
-  if (s.kind === "booking") {
-    const booking = admin.bookings.find((b) => b.id === s.id);
-    return booking ? bookingHTML(booking) : null;
-  }
-  const exists = (admin.availability[s.date] || []).some(([a, b]) => a === s.start && b === s.end);
-  if (!exists) return null;
-  return `
-    <p class="sheet-title">${dateLabel(s.date)} ${timeRange(s.start, s.end)}</p>
-    <p class="hint">신청을 받을 수 있게 열어 둔 시간이에요. 이미 들어온 신청은 함께 지워지지 않아요.</p>
-    <button type="button" class="sheet-delete" id="sheetDelete">이 시간 지우기</button>`;
+  const booking = admin.bookings.find((b) => b.id === admin.sheetBookingId);
+  $("#sheet").classList.toggle("hidden", !booking);
+  if (!booking) { admin.sheetBookingId = null; return; }
+  $("#sheetBody").innerHTML = bookingHTML(booking);
 }
 
 $("#sheetClose").addEventListener("click", closeSheet);
-$("#sheetBody").addEventListener("click", async (e) => {
-  if (!e.target.closest("#sheetDelete")) return;
-  const { date, start, end } = admin.sheet;
-  await callApi("/api/admin/availability", "DELETE", { date, start, end }).catch(() => {});
-  admin.sheet = null;
-  await refreshDashboard().catch(() => {});
-  renderSheet();
-});
 
 // ---------- 신청 현황 ----------
 function bookingHTML(b) {
@@ -380,7 +350,6 @@ function bookingHTML(b) {
       <div class="booking-time">${dateLabel(b.date)} ${timeRange(b.start, b.end)}</div>
       <div class="booking-meta">${esc(b.method)} · ${esc(b.location)}${b.isCustom ? " (직접 추천)" : ""}</div>
       ${b.message ? `<div class="booking-message">${esc(b.message)}</div>` : ""}
-      <button type="button" class="booking-cancel" data-id="${esc(b.id)}">${admin.armedCancelId === b.id ? "정말 취소할까요?" : "취소"}</button>
     </div>`;
 }
 
@@ -389,21 +358,6 @@ function renderBookings() {
   $("#bookingList").innerHTML = admin.bookings.map(bookingHTML).join("") || `<p class="hint">아직 들어온 신청이 없어요.</p>`;
 }
 
-document.addEventListener("click", async (e) => {
-  const btn = e.target.closest(".booking-cancel");
-  if (!btn) return;
-  const id = btn.dataset.id;
-  if (admin.armedCancelId !== id) {
-    admin.armedCancelId = id;
-    renderBookings();
-    renderSheet();
-    return;
-  }
-  admin.armedCancelId = null;
-  await callApi("/api/admin/bookings", "DELETE", { id }).catch(() => {});
-  await refreshDashboard().catch(() => {});
-});
-
 // ---------- 내가 올린 시간 ----------
 function renderMyWindows() {
   const dates = Object.keys(admin.availability).sort();
@@ -411,17 +365,9 @@ function renderMyWindows() {
     <div class="window-row">
       <span class="window-date">${dateLabel(date)}</span>
       <span class="window-chips">${admin.availability[date].map(([s, e]) =>
-        `<button class="window-chip" data-date="${date}" data-start="${s}" data-end="${e}" aria-label="${timeRange(s, e)} 삭제">${timeRange(s, e)} ✕</button>`
+        `<span class="window-chip">${timeRange(s, e)}</span>`
       ).join("")}</span>
     </div>`).join("") || `<p class="hint">아직 올린 시간이 없어요.</p>`;
-  $$("#myWindows .window-chip").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      await callApi("/api/admin/availability", "DELETE", {
-        date: btn.dataset.date, start: Number(btn.dataset.start), end: Number(btn.dataset.end),
-      }).catch(() => {});
-      await refreshDashboard().catch(() => {});
-    });
-  });
 }
 
 refreshDashboard().catch(() => {});

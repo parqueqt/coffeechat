@@ -184,7 +184,7 @@
   <main>
     <section class="card">
       <h2>🗓️ 내 캘린더</h2>
-      <p class="hint">PC는 시간표를 드래그하고, 휴대폰은 시작 칸과 끝 칸을 차례로 누르면 가능한 시간이 올라가요. 옆 날짜까지 끌면 여러 날에 같은 시간이 올라가요. 칸을 누르면 자세히 볼 수 있어요.</p>
+      <p class="hint">PC는 시간표를 드래그하고, 휴대폰은 시작 칸과 끝 칸을 차례로 누르면 가능한 시간이 올라가요. 옆 날짜까지 끌면 여러 날에 같은 시간이 올라가요. 올린 시간은 지울 수 없으니 확인하고 올려주세요. 신청 칸을 누르면 자세히 볼 수 있어요.</p>
       <div class="week-toolbar">
         <button type="button" class="cal-nav" data-week="-1" aria-label="이전">‹</button>
         <span id="weekLabel"></span>
@@ -201,13 +201,12 @@
 
     <section class="card">
       <h2>📬 신청 현황 <span class="booking-count" id="bookingCount"></span></h2>
-      <p class="hint">누가 신청했는지 10초마다 자동으로 새로고침돼요. 신청된 시간은 여기서 취소해야만 다시 열려요.</p>
+      <p class="hint">누가 신청했는지 10초마다 자동으로 새로고침돼요.</p>
       <div id="bookingList"></div>
     </section>
 
     <section class="card">
       <h2>🕐 내가 올린 시간</h2>
-      <p class="hint">시간을 눌러 지울 수 있어요. 이미 들어온 신청은 함께 지워지지 않아요.</p>
       <div id="myWindows"></div>
     </section>
   </main>

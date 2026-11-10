@@ -2,14 +2,12 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
   addAvailability,
-  cancelBooking,
   createBooking,
   emptyDoc,
   freeIntervals,
   kstNow,
   parseBooking,
   publicSchedule,
-  removeAvailability,
 } from "../lib/schedule.js";
 
 const NOW = { date: "2030-01-10", minute: 600 };
@@ -52,14 +50,11 @@ test("a booking overlapping an earlier one is refused", () => {
   assert.throws(() => createBooking(doc, request({ name: "김철수", start: 750, end: 810 }), NOW, id(2)), { code: "slot_taken" });
 });
 
-test("a booked time stays closed until an admin cancels it, even if the window is reopened", () => {
+test("a booked time stays closed even if the same window is uploaded again", () => {
   const doc = docWith(["hyunwoo", 600, 840]);
   createBooking(doc, request({ start: 720, end: 780 }), NOW, id(1));
-  removeAvailability(doc, "hyunwoo", { date: DAY, start: 600, end: 840 });
   addAvailability(doc, "hyunwoo", { dates: [DAY], start: 600, end: 840 }, NOW);
   assert.throws(() => createBooking(doc, request({ name: "김철수", start: 720, end: 780 }), NOW, id(2)), { code: "slot_taken" });
-  cancelBooking(doc, "b1");
-  assert.equal(createBooking(doc, request({ name: "김철수", start: 720, end: 780 }), NOW, id(2)).name, "김철수");
 });
 
 test("a booking outside the opened time is refused", () => {
@@ -73,19 +68,6 @@ test("resubmitting the same request returns the original booking", () => {
   const second = createBooking(doc, request(), NOW, id(2));
   assert.equal(second.id, first.id);
   assert.equal(doc.bookings.length, 1);
-});
-
-test("cancelling reopens the time", () => {
-  const doc = docWith(["hyunwoo", 600, 840]);
-  createBooking(doc, request(), NOW, id(1));
-  cancelBooking(doc, "b1");
-  assert.deepEqual(freeIntervals(doc, "hyunwoo", DAY, NOW), [[600, 840]]);
-});
-
-test("removing part of an opened window keeps the rest", () => {
-  const doc = docWith(["hyunwoo", 600, 840]);
-  removeAvailability(doc, "hyunwoo", { date: DAY, start: 660, end: 720 });
-  assert.deepEqual(doc.availability.hyunwoo[DAY], [[600, 660], [720, 840]]);
 });
 
 test("past dates and elapsed time are not offered", () => {
